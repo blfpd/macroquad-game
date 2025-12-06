@@ -6,14 +6,56 @@ struct Player {
     shape: Circle,
 }
 
+impl Player {
+    fn collides_with(&self, other: &Rect) -> bool {
+        self.shape.overlaps_rect(other)
+    }
+}
+
 struct Enemy {
     color: Color,
     speed: f32,
     shape: Rect,
+    collided: bool,
 }
 
-impl Player {
-    fn collide_with(&self, other: &Rect) -> bool {
+impl Enemy {
+    fn new(size: f32, color: Color) -> Self {
+        Self {
+            color,
+            speed: rand::gen_range(56.0, 150.0),
+            collided: false,
+            shape: Rect {
+                x: rand::gen_range(size / 2.0, screen_width() - size / 2.0),
+                y: -size,
+                h: size,
+                w: size,
+            },
+        }
+    }
+}
+
+struct Bullet {
+    color: Color,
+    speed: f32,
+    collided: bool,
+    shape: Circle,
+}
+
+impl Bullet {
+    fn new(circle: &Player) -> Self {
+        Self {
+            color: RED,
+            speed: circle.speed * 2.0,
+            collided: false,
+            shape: Circle {
+                x: circle.shape.x,
+                y: circle.shape.y,
+                r: 5.0,
+            },
+        }
+    }
+    fn collides_with(&mut self, other: &Rect) -> bool {
         self.shape.overlaps_rect(other)
     }
 }
@@ -24,10 +66,9 @@ async fn main() {
 
     const MOVEMENT_SPEED: f32 = 200.0;
 
-    let colors: Vec<Color> = vec![BLUE, PINK, GRAY];
+    let colors: Vec<Color> = vec![GREEN, LIME, DARKGREEN];
     let mut gameover = false;
 
-    let mut squares = vec![];
     let mut circle = Player {
         color: YELLOW,
         speed: MOVEMENT_SPEED,
@@ -37,6 +78,8 @@ async fn main() {
             y: screen_height() / 2.0,
         },
     };
+    let mut squares = vec![];
+    let mut bullets = vec![];
 
     loop {
         let delta_time = get_frame_time();
@@ -46,26 +89,27 @@ async fn main() {
         if rand::gen_range(0, 99) >= 95 {
             let size = rand::gen_range(16.0, 64.0);
             let color = *colors.choose().unwrap();
-            squares.push(Enemy {
-                color,
-                speed: rand::gen_range(56.0, 150.0),
-                shape: Rect {
-                    x: rand::gen_range(size / 2.0, screen_width() - size / 2.0),
-                    y: -size,
-                    h: size,
-                    w: size,
-                },
-            })
+            squares.push(Enemy::new(size, color))
+        }
+        if is_key_pressed(KeyCode::Space) {
+            bullets.push(Bullet::new(&circle))
         }
 
         for square in &mut squares {
             square.shape.y += square.speed * delta_time;
         }
+        for bullet in &mut bullets {
+            bullet.shape.y -= bullet.speed * delta_time;
+        }
 
         squares.retain(|square| square.shape.y < screen_height() + square.shape.h);
+        bullets.retain(|bullet| bullet.shape.y > 0.0 - bullet.shape.r);
+        squares.retain(|square| !square.collided);
+        bullets.retain(|bullet| !bullet.collided);
 
         if gameover && is_key_pressed(KeyCode::Space) {
             squares.clear();
+            bullets.clear();
             circle.shape.x = screen_width() / 2.0;
             circle.shape.y = screen_height() / 2.0;
             gameover = false;
@@ -101,14 +145,28 @@ async fn main() {
                 draw_rectangle(rect.x, rect.y, rect.w, rect.h, square.color);
             }
 
+            for bullet in &bullets {
+                let c = bullet.shape;
+                draw_circle(c.x, c.y, c.r, RED);
+            }
+
             draw_circle(circle.shape.x, circle.shape.y, circle.shape.r, circle.color);
         }
 
         if squares
             .iter()
-            .any(|square| circle.collide_with(&square.shape))
+            .any(|square| circle.collides_with(&square.shape))
         {
             gameover = true;
+        }
+
+        for square in squares.iter_mut() {
+            for bullet in bullets.iter_mut() {
+                if bullet.collides_with(&square.shape) {
+                    bullet.collided = true;
+                    square.collided = true;
+                }
+            }
         }
 
         if gameover {
